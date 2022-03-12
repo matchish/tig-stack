@@ -1,52 +1,73 @@
-version: "3"
-
+version: '3.6'
 services:
-    influxdb:
-        build: ./influxdb
-        container_name: influxdb
-        ports:
-            - ${INFLUXDB_PORT}:${INFLUXDB_PORT}
-        volumes:
-            - /var/lib/influxdb:/var/lib/influxdb
-        restart: always
-        env_file:
-            - .env
-        networks:
-            - backend
-            - frontend
+  node:
+    restart: always
+    build: ./node-example
+    ports:
+      - 3001:3000
+    volumes:
+      - ./node-example:/code
+  telegraf:
+    image: telegraf:1.18-alpine
+    env_file: .env
+    volumes:
+    - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    - /var/run/docker.sock:/var/run/docker.sock
+    user: telegraf:999
+    depends_on:
+      - influxdb
+    links:
+      - influxdb
+    ports:
+    - '127.0.0.1:8125:8125/udp'
 
-    telegraf:
-        build: ./telegraf
-        container_name: telegraf
-        links:
-            - influxdb
-        volumes:
-            - /var/run/docker.sock:/var/run/docker.sock
-            - /proc:/hostfs/proc
-        privileged: true
-        restart: always
-        env_file:
-            - .env
-        networks: 
-            - backend
-            
-    grafana:
-        build: ./grafana
-        container_name: grafana
-        ports: 
-            - ${GRAFANA_PORT}:${GRAFANA_PORT}
-        links:
-            - influxdb
-        volumes:
-            - /var/lib/grafana
-            - /var/log/grafana
-            - /var/lib/grafana/plugins
-        restart: always
-        env_file:
-            - .env
-        networks:
-            - frontend
+  influxdb:
+    image: influxdb:1.8-alpine
+    env_file: .env
+    ports:
+      - '127.0.0.1:8086:8086'
+    volumes:
+      - ./:/imports
+      - influxdb_data:/var/lib/influxdb
 
-networks:
-    backend:
-    frontend:
+  grafana:
+    image: grafana/grafana:8.0.2
+    depends_on:
+      - influxdb
+    env_file: .env
+    links:
+      - influxdb
+    ports:
+      - '127.0.0.1:3000:3000'
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+      - ./grafana/dashboards/:/var/lib/grafana/dashboards/
+
+  mongo:
+    image: mongo
+    ports:
+      - 27017:27017
+    volumes:
+      - mongodb:/data/db
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.1.1
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    environment:
+      - discovery.type=single-node
+      - cluster.routing.allocation.disk.threshold_enabled=false
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - 9200:9200 
+volumes:
+  grafana_data: {}
+  influxdb_data: {}
+  elasticsearch-data: {}
+  mongodb: {}
